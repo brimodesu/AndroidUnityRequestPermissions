@@ -1,32 +1,39 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using UnityEngine;
 using UnityEngine.Android;
+using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 public class AndroidPermissionsController : MonoBehaviour
 {
+    private Transform objMainCanvas;
+    public GameObject prefabAndroidPermissionsRequestPopUp;
+
+
     private static List<AndroidPermission> required_permissions = new List<AndroidPermission>()
     {
         new AndroidPermission()
         {
             name = "Teléfono/SMS",
             reason =
-                "Esta aplicación necesita poder enviar solicitudes USSD al operador para la generación de reportes y venta de productos no físicos.",
+                "Esta aplicación necesita poder enviar solicitudes USSD al operador para la generación de reportes.",
             key = "android.permission.CALL_PHONE"
         },
         new AndroidPermission()
         {
             name = "Almacenamiento",
             reason =
-                "Esta aplicación necesita almacenar de manera local toda la información necesaria para su funcionamiento (ventas, inventario, fotografias, etc.).",
+                "Esta aplicación necesita almacenar de manera local toda la información necesaria para su funcionamiento.",
             key = Permission.ExternalStorageWrite
         },
         new AndroidPermission()
         {
             name = "Cámara",
             reason =
-                "Esta aplicación necesita realizar fotografías y escaneo de documentos para documentar y agilizar procesos (gestiones y ventas).",
+                "Esta aplicación necesita realizar fotografías y escaneo de documentos.",
             key = Permission.Camera
         },
         new AndroidPermission()
@@ -39,22 +46,24 @@ public class AndroidPermissionsController : MonoBehaviour
 
     private static PermissionCallbacks callbacks;
 
-    private static void PermissionCallbacks_PermissionDeniedAndDontAskAgain(string permissionName)
+    private GameObject popUp;
+
+    private void PermissionCallbacks_PermissionDeniedAndDontAskAgain(string permissionName)
     {
         Debug.Log($"{permissionName} PermissionDeniedAndDontAskAgain");
-        // MyMessageBox.Question("No se pudo obtener el siguiente permiso: \n" + permissionName +
-        //                       "\n Este permiso es necesatio para el funcionamiento correcto de la aplicación.")
-        //         .Callback +=
-        //     (bool response) =>
-        //     {
-        //         if (response)
-        //         {
-        //             GoToSettings();
-        //         }
-        //     };
+        popUp = Instantiate(prefabAndroidPermissionsRequestPopUp, objMainCanvas);
+        popUp.GetComponent<PermissionRequestPopUpController>().SetUp(true, null, () =>
+        {
+#if PLATFORM_ANDROID && !UNITY_EDITOR
+               GoToSettings();
+#elif UNITY_EDITOR
+            Debug.Log("GoToSettings");
+#endif
+            Destroy(popUp);
+        });
     }
 
-    private static void PermissionCallbacks_PermissionGranted(string permissionName)
+    private void PermissionCallbacks_PermissionGranted(string permissionName)
     {
         Debug.Log($"{permissionName} PermissionCallbacks_PermissionGranted");
         switch (permissionName)
@@ -71,15 +80,22 @@ public class AndroidPermissionsController : MonoBehaviour
         }
     }
 
-    private static void PermissionCallbacks_PermissionDenied(string permissionName)
+    private void PermissionCallbacks_PermissionDenied(string permissionName)
     {
         Debug.Log($"{permissionName} PermissionCallbacks_PermissionDenied");
-        // MyMessageBox.Notification(
-        //     "Para poder utilizar correctamente esta aplicación es necesario el siguiente permiso: " +
-        //     permissionName);
+        popUp = Instantiate(prefabAndroidPermissionsRequestPopUp, objMainCanvas);
+        popUp.GetComponent<PermissionRequestPopUpController>().SetUp(true, null, () =>
+        {
+#if PLATFORM_ANDROID && !UNITY_EDITOR
+               GoToSettings();
+#elif UNITY_EDITOR
+            Debug.Log("GoToSettings");
+#endif
+            Destroy(popUp);
+        });
     }
 
-    public static void RequestAndroidPermissions()
+    public void RequestAndroidPermissions()
     {
         callbacks = new PermissionCallbacks();
         callbacks.PermissionDenied += PermissionCallbacks_PermissionDenied;
@@ -87,16 +103,31 @@ public class AndroidPermissionsController : MonoBehaviour
         callbacks.PermissionDeniedAndDontAskAgain += PermissionCallbacks_PermissionDeniedAndDontAskAgain;
 
         var permissionsToRequestString = new List<string>();
-        
+        var permissionsToRequestUI = new List<AndroidPermission>();
+
         foreach (var permissionToRequest in required_permissions)
         {
             if (!string.IsNullOrEmpty(permissionToRequest.key) &&
                 !Permission.HasUserAuthorizedPermission(permissionToRequest.key))
             {
                 permissionsToRequestString.Add(permissionToRequest.key);
+                permissionsToRequestUI.Add(permissionToRequest);
             }
         }
-        Permission.RequestUserPermissions(permissionsToRequestString.ToArray(), callbacks);
+
+        if (permissionsToRequestUI.Count > 0)
+        {
+            popUp = Instantiate(prefabAndroidPermissionsRequestPopUp, objMainCanvas);
+            popUp.GetComponent<PermissionRequestPopUpController>().SetUp(false, permissionsToRequestUI, () =>
+            {
+#if PLATFORM_ANDROID && !UNITY_EDITOR
+                Permission.RequestUserPermissions(permissionsToRequestString.ToArray(), callbacks);
+#elif UNITY_EDITOR
+                Debug.Log("Grant");
+#endif
+                Destroy(popUp);
+            });
+        }
     }
 
     public static void GoToSettings()
@@ -127,5 +158,11 @@ public class AndroidPermissionsController : MonoBehaviour
         {
             Debug.LogException(ex);
         }
+    }
+
+    private void Awake()
+    {
+        objMainCanvas = GameObject.Find("MainCanvas").transform;
+        RequestAndroidPermissions();
     }
 }
